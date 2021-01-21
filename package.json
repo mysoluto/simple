@@ -1,0 +1,19 @@
+{
+  "name": "simple",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "git@github.com:mysoluto/simple.git",
+  "author": "Xiaohai <xiaohai.liu@klook.com>",
+  "license": "MIT",
+  "dependencies": {
+    "rollup": "^2.37.1"
+  },
+  "scripts": {
+    "build": "rollup --config rollup.config.js"
+  },
+  "devDependencies": {
+    "@rollup/plugin-typescript": "^8.1.0",
+    "tslib": "^2.1.0",
+    "typescript": "^4.1.3"
+  }
+}

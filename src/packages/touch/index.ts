@@ -1,4 +1,4 @@
-import SimpleEventEmitter from './event-emitter'
+import SimpleEventEmitter from '../../utils/event-emitter'
 
 type SimpleTouchOptions = {
   [key: string] : any
@@ -33,7 +33,7 @@ export default class SimpleTouch extends SimpleEventEmitter {
     if (!el || el.nodeType !== 1 || typeof window === undefined) {
       return
     }
-  
+
     super()
     this.el = el
     this.options = options || {}
@@ -66,7 +66,7 @@ export default class SimpleTouch extends SimpleEventEmitter {
   /**
    * touches: A list of information for every finger currently touching the screen
    * targetTouches: Like touches, but is filtered to only the information for finger touches that started out within the same node.
-   * @param e 
+   * @param e
    */
   onTouchStart(e: TouchEvent) {
     if (!e.touches) {
@@ -76,7 +76,7 @@ export default class SimpleTouch extends SimpleEventEmitter {
 
     this.x1 = e.touches[0].pageX
     this.y1 = e.touches[0].pageY
-    
+
     const delta = Date.now() - (this.last || this.now)
     if (this.preX1 !== undefined) {
       if (delta > 0 && delta < 250 && Math.abs(this.preX1 - this.x1) < 30 && Math.abs(this.preY1 - this.y1) < 30) {
@@ -100,7 +100,7 @@ export default class SimpleTouch extends SimpleEventEmitter {
       this.preventTap = true // diable tap
       this.emit('longTap')
     }, 750)
-  
+
     // 检测边缘，阻止ios edge swipe的触发
     if (this.x1 <= 20 || (window.innerWidth - this.x1 <= 20)) {
       this.preventSwipe = true
@@ -167,7 +167,7 @@ export default class SimpleTouch extends SimpleEventEmitter {
           this.isDoubleTap = false
         }
       }, 0)
-  
+
       if (!this.isDoubleTap) {
         this.singleTapTid = setTimeout(() => this.emit('singleTap'), 250)
       }
