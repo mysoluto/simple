@@ -73,122 +73,116 @@ var SimpleEventEmitter = /** @class */ (function () {
     return SimpleEventEmitter;
 }());
 
-var getLen = function (v) { return Math.sqrt(v.x * v.x + v.y * v.y); };
+var getLen = function (v) { return Math.sqrt(Math.pow(v.x, 2) + Math.pow(v.y, 2)); };
 var getAngle = function (v1, v2) {
-    var mr = getLen(v1) * getLen(v2);
-    if (mr === 0) {
+    var len = getLen(v1) * getLen(v2);
+    if (len === 0) {
         return 0;
     }
-    var r = (v1.x * v2.x + v1.y * v2.y) / mr;
+    var r = (v1.x * v2.x + v1.y * v2.y) / len;
     return Math.acos(Math.min(r, 1));
 };
+var getRotateAngle = function (v1, v2) {
+    var crossValue = v1.x * v2.y - v1.y * v2.x;
+    return 180 * getAngle(v1, v2) * (crossValue > 0 ? -1 : 1) / Math.PI;
+};
+var eventNames = ['onTouchStart', 'onTouchMove', 'onTouchEnd', 'onTouchCancel'];
+/**
+ * longTap, tap, singleTap, doubleTap, swipe, rotate, pinch, pressmove
+ * longTap 750ms, singleTap: 250ms
+ * doubleTap: 250ms & deltaX|Y < 30: start -> end -> start -> end
+**/
 var SimpleTouch = /** @class */ (function (_super) {
     __extends(SimpleTouch, _super);
     function SimpleTouch(el, options) {
         if (options === void 0) { options = {}; }
-        var _this = this;
-        el = (el && typeof el === 'string' ? document.querySelector(el) : el);
-        if (!el || el.nodeType !== 1 || typeof window === undefined) {
-            return;
+        var _this = _super.call(this) || this;
+        _this.options = {};
+        _this.longTapTid = null;
+        _this.tapTid = null;
+        _this.last = 0;
+        _this.now = 0;
+        _this.isDoubleTap = false;
+        _this.startX = 0;
+        _this.startY = 0;
+        _this.lastX = 0;
+        _this.lastY = 0;
+        _this.lastV = null;
+        _this.pinchStartLen = 1;
+        _this.el = typeof el === 'string' ? document.querySelector(el) : el;
+        if (!_this.el || _this.el.nodeType !== 1 || typeof window === undefined) {
+            return _this;
         }
-        _this = _super.call(this) || this;
-        _this.el = el;
-        _this.options = options || {};
-        // 初始化
-        if (options.on) {
-            Object.keys(options.on).forEach(function (eventKey) {
-                if (Array.isArray(options.on[eventKey])) {
-                    options.on[eventKey].forEach(function (handler) { return _this.on(eventKey, handler); });
-                }
-                else {
-                    _this.on(eventKey, options.on[eventKey]);
-                }
+        _this.options = Object.assign({}, options);
+        if (_this.options.on) {
+            Object.keys(_this.options.on).forEach(function (eventName) {
+                var handlers = _this.options.on[eventName];
+                (Array.isArray(handlers) ? handlers : [handlers]).forEach(function (handler) { return _this.on(eventName, handler); });
             });
         }
-        ['onTouchStart', 'onTouchMove', 'onTouchEnd', 'onTouchCancel'].forEach(function (eventName) {
+        eventNames.forEach(function (eventName) {
             _this[eventName] = _this[eventName].bind(_this);
-            _this.el.addEventListener(eventName.slice(2).toLowerCase(), _this[eventName], false);
+            var name = eventName.slice(2).toLowerCase();
+            _this.el.addEventListener(name, _this[eventName], false);
         });
         return _this;
     }
     SimpleTouch.prototype.destroy = function () {
         var _this = this;
-        ['onTouchStart', 'onTouchMove', 'onTouchEnd', 'onTouchCancel'].forEach(function (eventName) {
-            _this.el.removeEventListener(eventName.slice(2).toLowerCase(), _this[eventName]);
+        eventNames.forEach(function (eventName) {
+            var name = eventName.slice(2).toLowerCase();
+            _this.el.removeEventListener(name, _this[eventName]);
         });
-        this.el = document.body;
-        this.options = {};
     };
-    /**
-     * touches: A list of information for every finger currently touching the screen
-     * targetTouches: Like touches, but is filtered to only the information for finger touches that started out within the same node.
-     * @param e
-     */
     SimpleTouch.prototype.onTouchStart = function (e) {
         var _this = this;
         if (!e.touches) {
             return;
         }
         this.now = Date.now();
-        this.x1 = e.touches[0].pageX;
-        this.y1 = e.touches[0].pageY;
-        var delta = Date.now() - (this.last || this.now);
-        if (this.preX1 !== undefined) {
-            if (delta > 0 && delta < 250 && Math.abs(this.preX1 - this.x1) < 30 && Math.abs(this.preY1 - this.y1) < 30) {
-                this.isDoubleTap = true;
-                this.preventTap = true;
-            }
+        this.startX = e.touches[0].pageX;
+        this.startY = e.touches[0].pageY;
+        var tapTimeDelta = this.now - (this.last || this.now);
+        if (this.lastX && tapTimeDelta > 0 && tapTimeDelta < 250) {
+            this.isDoubleTap = Math.abs(this.lastX - this.startX) < 30 && Math.abs(this.lastY - this.startY) < 30;
         }
-        this.preX1 = this.x1;
-        this.preY1 = this.y1;
         this.last = this.now;
+        this.lastX = this.startX;
+        this.lastY = this.startY;
         if (e.touches.length > 1) {
-            this.cancelLongTap();
-            this.cancelSingleTap();
-            this.preV = { x: e.touches[0].pageX - e.touches[0].pageY };
-            this.pinchStartLen = getLen(this.preV);
+            this.lastV = { x: e.touches[1].pageX - this.startX, y: e.touches[1].pageY - this.startY };
+            this.pinchStartLen = getLen(this.lastV);
         }
         this.longTapTid = setTimeout(function () {
-            _this.preventTap = true; // diable tap
-            _this.emit('longTap');
+            _this.emit('longTap', { e: e, timeDiff: Date.now() - (_this.now || Date.now()) });
         }, 750);
-        // 检测边缘，阻止ios edge swipe的触发
-        if (this.x1 <= 20 || (window.innerWidth - this.x1 <= 20)) {
-            this.preventSwipe = true;
-        }
-        this.emit('touchstart', { event: e }); // 触发touchstart
-    };
-    SimpleTouch.prototype.cancelLongTap = function () {
-        clearTimeout(this.longTapTid);
-    };
-    SimpleTouch.prototype.cancelSingleTap = function () {
-        clearTimeout(this.singleTapTid);
+        this.emit('touchstart', { e: e });
     };
     SimpleTouch.prototype.onTouchMove = function (e) {
         if (!e.touches) {
             return;
         }
         this.isDoubleTap = false;
-        this.x2 = e.touches[0].pageX;
-        this.y2 = e.touches[0].pageY;
-        if (e.touches.length > 1 && this.preV) {
-            var tempV = { x: this.x2 - e.touches[1].pageX, y: this.y2 - e.touches[1].pageY };
-            var zoom = this.pinchStartLen ? getLen(tempV) / this.pinchStartLen : 1;
-            var angle = getAngle(tempV, this.preV);
-            this.pinchStartLen && this.emit('pinch', { event: e, angle: angle, zoom: zoom });
-            this.emit('rotate', { event: e, angle: angle, zoom: zoom });
-            this.preV = tempV;
-        }
-        if (this.x2 && (Math.abs(this.x1 - this.x2) > 10 || Math.abs(this.y1 - this.y2 || 0) > 10)) {
-            this.preventTap = true;
-        }
-        // 页面滚动的情况下，阻止swipe的触发
-        if (this.options.swipeDirection && !this.preventSwipe) {
-            var _a = (Math.atan2(Math.abs(this.x2 - this.x1), Math.abs(this.y2 - this.y1)) * 180) / Math.PI;
-            this.preventSwipe = this.options.swipeDirection === 'horizontal' ? _a > 45 || this.x2 - this.x1 === 0 : _a < 45 || this.y2 - this.y1 === 0;
-        }
-        this.emit('touchmove', { event: e });
         this.cancelLongTap();
+        var pageX = e.touches[0].pageX;
+        var pageY = e.touches[0].pageY;
+        if (e.touches.length > 1 && this.lastV) {
+            var tempV = { x: e.touches[1].pageX - pageX, y: e.touches[1].pageY - pageY };
+            var zoom = this.pinchStartLen ? getLen(tempV) / this.pinchStartLen : 1;
+            var angle = getRotateAngle(tempV, this.lastV);
+            this.emit('pinch', { e: e, zoom: zoom, angle: angle });
+            this.emit('rotate', { e: e, zoom: zoom, angle: angle });
+            this.lastV = tempV;
+        }
+        if (e.touches.length === 1) {
+            this.emit('pressmove', { e: e, deltaX: pageX - this.lastX, deltaY: pageY - this.lastY });
+        }
+        this.lastX = pageX;
+        this.lastY = pageY;
+        this.emit('touchmove', { e: e });
+        if (e.touches.length > 1) {
+            e.preventDefault();
+        }
     };
     SimpleTouch.prototype.onTouchEnd = function (e) {
         var _this = this;
@@ -196,35 +190,21 @@ var SimpleTouch = /** @class */ (function (_super) {
             return;
         }
         this.cancelLongTap();
-        var timeDiff = Date.now() - this.now;
-        if (!this.preventSwipe && this.options.swipeDirection) {
-            var direction = this.options.swipeDirection === 'horizontal' ? this.x2 - this.x1 : this.y2 - this.y1;
-            this.emit('swipe', { event: e, timeDiff: timeDiff, direction: direction > 0 ? 'prev' : 'next' });
-        }
-        else {
-            this.tapTid = setTimeout(function () {
-                !_this.preventTap && _this.emit('tap');
-                if (_this.isDoubleTap) {
-                    _this.emit('doubleTap');
-                    _this.isDoubleTap = false;
-                }
-            }, 0);
-            if (!this.isDoubleTap) {
-                this.singleTapTid = setTimeout(function () { return _this.emit('singleTap'); }, 250);
+        this.tapTid = setTimeout(function () {
+            if (_this.isDoubleTap) {
+                _this.isDoubleTap = false;
+                _this.emit('doubleTap', { e: e });
             }
-        }
-        this.emit('touchend', { event: e });
-        this.x1 = this.x2 = this.y1 = this.y2 = null;
-        this.isDoubleTap = false;
-        this.preV = null;
-        this.pinchStartLen = null;
+        }, 0);
+        this.emit('touchend', { e: e });
     };
-    SimpleTouch.prototype.onTouchCancel = function () {
+    SimpleTouch.prototype.onTouchCancel = function (e) {
         this.cancelLongTap();
-        this.cancelSingleTap();
         clearTimeout(this.tapTid);
-        this.preventTap = false;
-        this.preventSwipe = false;
+        this.emit('touchcancel', { e: e });
+    };
+    SimpleTouch.prototype.cancelLongTap = function () {
+        clearTimeout(this.longTapTid);
     };
     return SimpleTouch;
 }(SimpleEventEmitter));

@@ -10,7 +10,7 @@ const getEntries = async () => {
   const files = fs.readdirSync(root)
   const hasIndexFile = await files.map(filename => promisefy(fs.readFile)(path.join(root, filename, 'index.ts')).catch(() => null))
   return files.map((filename, index) => {
-    return hasIndexFile[index] ? { path: path.join(root, filename, 'index.ts'), name: filename } : null
+    return hasIndexFile[index] && /^\w/.test(filename) ? { path: path.join(root, filename, 'index.ts'), name: filename } : null
   }).filter(v => v)
 }
 
@@ -24,11 +24,12 @@ const configs = getEntries().then(entries => {
       },
       {
         file: path.join(root, entry.name, 'dist/index.iife.js'),
-        format: 'iife'
+        format: 'iife',
+        name: `Simple${entry.name.slice(0, 1).toUpperCase()}${entry.name.slice(1)}`
       }
     ],
     plugins: [
-      rollupTypescript()
+      rollupTypescript({ lib: ["es5", "es6", "dom"], target: "es5" })
     ]
   }))
 })

@@ -1,120 +1,119 @@
-import SimpleEventEmitter from '../../utils/event-emitter'
-
-type SimpleTouchOptions = {
-  [key: string] : any
-}
+import EventEmitter from '../../utils/event-emitter'
 
 type Vector = {
   x: number,
   y: number
 }
 
+type SimpleTouchEvent = {
+  e: TouchEvent,
+  direction?: string,
+  angle?: number,
+  zoom?: number,
+  timeDiff?: number
+}
 
-const getLen = (v: Vector)  => Math.sqrt(v.x * v.x + v.y * v.y)
+const getLen = (v: Vector) => Math.sqrt(v.x ** 2 + v.y ** 2)
 
 const getAngle = (v1: Vector, v2: Vector) => {
-  const mr = getLen(v1) * getLen(v2)
-  if (mr === 0) {
+  const len = getLen(v1) * getLen(v2)
+  if (len === 0) {
     return 0
   }
-  const r = (v1.x * v2.x + v1.y * v2.y) / mr
+  const r = (v1.x * v2.x + v1.y * v2.y) / len
   return Math.acos(Math.min(r, 1))
 }
 
+const getRotateAngle = (v1: Vector, v2: Vector) => {
+  const crossValue = v1.x * v2.y - v1.y * v2.x
+  return 180 * getAngle(v1, v2) * (crossValue > 0 ? -1 : 1) / Math.PI
+}
 
-export default class SimpleTouch extends SimpleEventEmitter {
-  [key: string]: any
+const eventNames = ['onTouchStart', 'onTouchMove', 'onTouchEnd', 'onTouchCancel']
 
+/**
+ * longTap, tap, singleTap, doubleTap, swipe, rotate, pinch, pressmove
+ * longTap 750ms, singleTap: 250ms
+ * doubleTap: 250ms & deltaX|Y < 30: start -> end -> start -> end
+**/
+export default class SimpleTouch extends EventEmitter {
   el!: HTMLElement
-  options!: SimpleTouchOptions
+  options: { [key: string]: any } = {}
 
-  constructor(el: HTMLElement | string, options: SimpleTouchOptions = {}) {
-    el = (el && typeof el === 'string' ? document.querySelector(el) as HTMLElement : el) as HTMLElement
-    if (!el || el.nodeType !== 1 || typeof window === undefined) {
+  longTapTid: number | null = null
+  tapTid: number | null = null
+
+  last: number = 0
+  now: number = 0
+  isDoubleTap: boolean = false
+
+  startX: number = 0
+  startY: number = 0
+  lastX: number = 0
+  lastY: number = 0
+  lastV: Vector | null = null
+
+  pinchStartLen: number = 1
+
+  constructor(el: HTMLElement | string, options = {}) {
+    super()
+
+    this.el = typeof el === 'string' ? document.querySelector(el) : el
+
+    if (!this.el || this.el.nodeType !== 1 || typeof window === undefined) {
       return
     }
 
-    super()
-    this.el = el
-    this.options = options || {}
+    this.options = Object.assign({}, options)
 
-    // 初始化
-    if (options.on) {
-      Object.keys(options.on).forEach((eventKey: string) => {
-        if (Array.isArray(options.on[eventKey])) {
-          options.on[eventKey].forEach((handler: Function) => this.on(eventKey, handler))
-        } else {
-          this.on(eventKey, options.on[eventKey])
-        }
+    if (this.options.on) {
+      Object.keys(this.options.on).forEach((eventName: string) => {
+        const handlers: any = this.options.on[eventName]
+        ;(Array.isArray(handlers) ? handlers : [handlers]).forEach((handler: Function) => this.on(eventName, handler))
       })
     }
 
-    ['onTouchStart', 'onTouchMove', 'onTouchEnd', 'onTouchCancel'].forEach((eventName: string) => {
+    eventNames.forEach((eventName: string) => {
       this[eventName] = this[eventName].bind(this)
-      this.el.addEventListener(eventName.slice(2).toLowerCase(), this[eventName], false)
+      const name = eventName.slice(2).toLowerCase()
+      this.el.addEventListener(name, this[eventName], false)
     })
   }
 
-  destroy() {
-    ['onTouchStart', 'onTouchMove', 'onTouchEnd', 'onTouchCancel'].forEach((eventName: string) => {
-      this.el.removeEventListener(eventName.slice(2).toLowerCase(), this[eventName])
+  destroy(): void {
+    eventNames.forEach((eventName: string) => {
+      const name = eventName.slice(2).toLowerCase()
+      this.el.removeEventListener(name, this[eventName])
     })
-    this.el = document.body
-    this.options = {}
   }
 
-  /**
-   * touches: A list of information for every finger currently touching the screen
-   * targetTouches: Like touches, but is filtered to only the information for finger touches that started out within the same node.
-   * @param e
-   */
   onTouchStart(e: TouchEvent) {
     if (!e.touches) {
       return
     }
     this.now = Date.now()
+    this.startX = e.touches[0].pageX
+    this.startY = e.touches[0].pageY
 
-    this.x1 = e.touches[0].pageX
-    this.y1 = e.touches[0].pageY
-
-    const delta = Date.now() - (this.last || this.now)
-    if (this.preX1 !== undefined) {
-      if (delta > 0 && delta < 250 && Math.abs(this.preX1 - this.x1) < 30 && Math.abs(this.preY1 - this.y1) < 30) {
-        this.isDoubleTap = true
-        this.preventTap = true
-      }
+    const tapTimeDelta = this.now - (this.last || this.now)
+    if (this.lastX && tapTimeDelta > 0 && tapTimeDelta < 250) {
+      this.isDoubleTap = Math.abs(this.lastX - this.startX) < 30 && Math.abs(this.lastY - this.startY) < 30
     }
 
-    this.preX1 = this.x1
-    this.preY1 = this.y1
     this.last = this.now
+    this.lastX = this.startX
+    this.lastY = this.startY
+
 
     if (e.touches.length > 1) {
-      this.cancelLongTap()
-      this.cancelSingleTap()
-      this.preV = { x: e.touches[0].pageX - e.touches[0].pageY }
-      this.pinchStartLen = getLen(this.preV)
+      this.lastV = { x: e.touches[1].pageX - this.startX, y: e.touches[1].pageY - this.startY }
+      this.pinchStartLen = getLen(this.lastV)
     }
 
     this.longTapTid = setTimeout(() => {
-      this.preventTap = true // diable tap
-      this.emit('longTap')
+      this.emit('longTap', { e, timeDiff: Date.now() - (this.now || Date.now()) })
     }, 750)
-
-    // 检测边缘，阻止ios edge swipe的触发
-    if (this.x1 <= 20 || (window.innerWidth - this.x1 <= 20)) {
-      this.preventSwipe = true
-    }
-
-    this.emit('touchstart', { event: e }) // 触发touchstart
-  }
-
-  cancelLongTap() {
-    clearTimeout(this.longTapTid)
-  }
-
-  cancelSingleTap() {
-    clearTimeout(this.singleTapTid)
+    this.emit('touchstart', { e })
   }
 
   onTouchMove(e: TouchEvent) {
@@ -122,30 +121,32 @@ export default class SimpleTouch extends SimpleEventEmitter {
       return
     }
     this.isDoubleTap = false
-    this.x2 = e.touches[0].pageX
-    this.y2 = e.touches[0].pageY
-
-    if (e.touches.length > 1 && this.preV) {
-      const tempV = { x: this.x2 - e.touches[1].pageX, y: this.y2 - e.touches[1].pageY }
-      const zoom = this.pinchStartLen ? getLen(tempV) / this.pinchStartLen : 1
-      const angle = getAngle(tempV, this.preV)
-      this.pinchStartLen && this.emit('pinch', { event: e, angle, zoom })
-      this.emit('rotate', { event: e, angle, zoom })
-      this.preV = tempV
-    }
-
-    if (this.x2 && (Math.abs(this.x1 - this.x2) > 10 || Math.abs(this.y1 - this.y2 || 0) > 10)) {
-      this.preventTap = true
-    }
-
-    // 页面滚动的情况下，阻止swipe的触发
-    if (this.options.swipeDirection && !this.preventSwipe) {
-      const _a = (Math.atan2(Math.abs(this.x2 - this.x1), Math.abs(this.y2 - this.y1)) * 180) / Math.PI;
-      this.preventSwipe = this.options.swipeDirection === 'horizontal' ? _a > 45 || this.x2 - this.x1 === 0 : _a < 45 || this.y2 - this.y1 === 0
-    }
-
-    this.emit('touchmove', { event: e })
     this.cancelLongTap()
+
+    const pageX = e.touches[0].pageX
+    const pageY = e.touches[0].pageY
+
+    if (e.touches.length > 1 && this.lastV) {
+      const tempV = { x: e.touches[1].pageX - pageX, y: e.touches[1].pageY - pageY }
+      const zoom = this.pinchStartLen ? getLen(tempV) / this.pinchStartLen : 1
+      const angle = getRotateAngle(tempV, this.lastV)
+      this.emit('pinch', { e, zoom, angle })
+      this.emit('rotate', { e, zoom, angle })
+      this.lastV = tempV
+    }
+
+    if (e.touches.length === 1) {
+      this.emit('pressmove', { e, deltaX: pageX - this.lastX, deltaY: pageY - this.lastY })
+    }
+
+    this.lastX = pageX
+    this.lastY = pageY
+
+    this.emit('touchmove', { e })
+
+    if (e.touches.length > 1) {
+      e.preventDefault()
+    }
   }
 
   onTouchEnd(e: TouchEvent) {
@@ -153,38 +154,24 @@ export default class SimpleTouch extends SimpleEventEmitter {
       return
     }
     this.cancelLongTap()
-
-    const timeDiff = Date.now() - this.now
-
-    if (!this.preventSwipe && this.options.swipeDirection) {
-      const direction = this.options.swipeDirection === 'horizontal' ? this.x2 - this.x1 : this.y2 - this.y1
-      this.emit('swipe', { event: e, timeDiff, direction: direction > 0 ? 'prev' : 'next' })
-    } else {
-      this.tapTid = setTimeout(() => {
-        !this.preventTap && this.emit('tap')
-        if (this.isDoubleTap) {
-          this.emit('doubleTap')
-          this.isDoubleTap = false
-        }
-      }, 0)
-
-      if (!this.isDoubleTap) {
-        this.singleTapTid = setTimeout(() => this.emit('singleTap'), 250)
+    this.tapTid = setTimeout(() => {
+      if (this.isDoubleTap) {
+        this.isDoubleTap = false
+        this.emit('doubleTap', { e })
       }
-    }
+    }, 0)
 
-    this.emit('touchend', { event: e })
-    this.x1 = this.x2 = this.y1 = this.y2 = null
-    this.isDoubleTap = false
-    this.preV = null
-    this.pinchStartLen = null
+    this.emit('touchend', { e, timeDiff: Date.now() - (this.now || Date.now()) })
   }
 
-  onTouchCancel() {
+  onTouchCancel(e: TouchEvent) {
     this.cancelLongTap()
-    this.cancelSingleTap()
     clearTimeout(this.tapTid)
-    this.preventTap = false
-    this.preventSwipe = false
+
+    this.emit('touchcancel', { e })
+  }
+
+  cancelLongTap() {
+    clearTimeout(this.longTapTid)
   }
 }
