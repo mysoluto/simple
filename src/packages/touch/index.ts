@@ -158,10 +158,16 @@ export default class SimpleTouch extends EventEmitter {
       if (this.isDoubleTap) {
         this.isDoubleTap = false
         this.emit('doubleTap', { e })
+        this.lastX = this.lastY = 0
+        this.last = 0
       }
     }, 0)
 
     this.emit('touchend', { e, timeDiff: Date.now() - (this.now || Date.now()) })
+
+    this.startX = this.startY = 0
+    this.pinchStartLen = 1
+    this.lastV = null
   }
 
   onTouchCancel(e: TouchEvent) {
@@ -169,6 +175,10 @@ export default class SimpleTouch extends EventEmitter {
     clearTimeout(this.tapTid)
 
     this.emit('touchcancel', { e })
+
+    this.startX = this.startY = 0
+    this.pinchStartLen = 1
+    this.lastV = null
   }
 
   cancelLongTap() {

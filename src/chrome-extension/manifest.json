@@ -1,0 +1,7 @@
+{
+  "name": "Soluto Self Tools",
+  "description": "Some may be used simple tool",
+  "manifest_version": 3,
+  "version": "1.0",
+  "permissions": ["storage"]
+}
