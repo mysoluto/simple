@@ -3,5 +3,25 @@
   "description": "Some may be used simple tool",
   "manifest_version": 3,
   "version": "1.0",
-  "permissions": ["storage"]
+  "permissions": [
+    "storage",
+    "webRequest",
+    "tabs",
+    "webNavigation",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.klook.com/*", "*://*.klook.cn/*"],
+      "js": ["contentScript.js"],
+      "run_at": "document_start"
+    }
+  ]
 }
